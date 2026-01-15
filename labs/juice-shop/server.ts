@@ -191,13 +191,13 @@ restoreOverwrittenFilesWithOriginals().then(() => {
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        "'unsafe-inline'",
-        "'unsafe-eval'",
+        // "'unsafe-inline'",
+        // "'unsafe-eval'",
         "cdnjs.cloudflare.com"
       ],
       styleSrc: [
         "'self'",
-        "'unsafe-inline'",
+        // "'unsafe-inline'",
         "cdnjs.cloudflare.com",
         "fonts.googleapis.com"
       ],
