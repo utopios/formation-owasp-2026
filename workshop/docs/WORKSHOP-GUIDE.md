@@ -253,7 +253,8 @@ curl http://localhost:8080/api/health
 # Lancer le scan baseline
 docker run --rm -t \
   --network host \
-  owasp/zap2docker-stable \
+  -v $(pwd):/zap/wrk:rw \
+  ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py \
   -t http://localhost:8080 \
   -r zap-baseline-report.html
@@ -264,8 +265,8 @@ docker run --rm -t \
 ```bash
 docker run --rm -t \
   --network host \
-  -v $(pwd)/zap-reports:/zap/wrk \
-  owasp/zap2docker-stable \
+  -v $(pwd):/zap/wrk:rw \
+  ghcr.io/zaproxy/zaproxy:stable \
   zap-full-scan.py \
   -t http://localhost:8080 \
   -r zap-full-report.html \
@@ -278,7 +279,8 @@ docker run --rm -t \
 ```bash
 docker run --rm -t \
   --network host \
-  owasp/zap2docker-stable \
+  -v $(pwd):/zap/wrk:rw \
+  ghcr.io/zaproxy/zaproxy:stable \
   zap-full-scan.py \
   -t http://localhost:8080 \
   -r zap-auth-report.html \
@@ -294,7 +296,8 @@ docker run --rm -t \
 # Scanner les endpoints API
 docker run --rm -t \
   --network host \
-  owasp/zap2docker-stable \
+  -v $(pwd):/zap/wrk:rw \
+  ghcr.io/zaproxy/zaproxy:stable \
   zap-api-scan.py \
   -t http://localhost:8080/api \
   -f openapi \
