@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VulnerableBank - Transfert</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        .navbar {
+            background: #1a1a2e;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar h1 span { color: #e94560; }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            color: #1a1a2e;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #d63651;
+        }
+        .balance-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .vulnerability-note {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .hint {
+            font-size: 12px;
+            color: #e94560;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>Vulnerable<span>Bank</span></h1>
+        <div>
+            <a href="/dashboard">Tableau de bord</a>
+            <a href="/logout">Déconnexion</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <h2>Effectuer un transfert</h2>
+            
+            <div class="balance-info">
+                <strong>Votre solde actuel:</strong> 
+                <span th:text="${#numbers.formatDecimal(user.balance, 1, 2)} + ' €'">0.00 €</span>
+            </div>
+
+            <!-- VULNÉRABILITÉ : Pas de protection CSRF -->
+            <form method="POST" action="/dashboard/transfer">
+                <div class="form-group">
+                    <label for="fromUserId">Compte source</label>
+                    <!-- VULNÉRABILITÉ : L'utilisateur peut modifier ce champ -->
+                    <input type="number" id="fromUserId" name="fromUserId" 
+                           th:value="${user.id}" required>
+                    <p class="hint">VULNÉRABLE : Modifiable ! Essayez un autre ID</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="toUserId">Compte destinataire</label>
+                    <select id="toUserId" name="toUserId" required>
+                        <option value="">Sélectionner un destinataire</option>
+                        <option th:each="u : ${users}" 
+                                th:if="${u.id != user.id}"
+                                th:value="${u.id}" 
+                                th:text="${u.username + ' (ID: ' + u.id + ')'}">
+                        </option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="amount">Montant (€)</label>
+                    <input type="number" id="amount" name="amount" 
+                           step="0.01" min="0.01" required>
+                    <p class="hint">VULNÉRABLE : Montants négatifs non vérifiés</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description (optionnel)</label>
+                    <input type="text" id="description" name="description"
+                           placeholder="Ex: Remboursement déjeuner">
+                </div>
+
+                <button type="submit" class="btn">Effectuer le transfert</button>
+            </form>
+
+            <div class="vulnerability-note">
+                <strong>⚠️ Vulnérabilités présentes :</strong>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>IDOR:</strong> Le champ fromUserId peut être modifié pour voler depuis d'autres comptes</li>
+                    <li><strong>Validation:</strong> Les montants négatifs ne sont pas vérifiés côté serveur</li>
+                    <li><strong>CSRF:</strong> Pas de token de protection</li>
+                    <li><strong>Race Condition:</strong> Deux transferts simultanés peuvent dépasser le solde</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

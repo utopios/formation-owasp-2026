@@ -1,0 +1,148 @@
+version: '3.8'
+
+# ===========================================
+# Infrastructure DevSecOps pour Workshop
+# ===========================================
+
+services:
+  # Application vulnérable
+  vulnerable-app:
+    build:
+      context: ./vulnerable-app
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - devsecops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # SonarQube pour l'analyse SAST
+  sonarqube:
+    image: sonarqube:community
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://sonar-db:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    networks:
+      - devsecops-network
+    depends_on:
+      - sonar-db
+
+  # Base de données PostgreSQL pour SonarQube
+  sonar-db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+      - POSTGRES_DB=sonar
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+    networks:
+      - devsecops-network
+
+  # OWASP ZAP pour l'analyse DAST
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    ports:
+      - "8090:8080"
+    command: zap-webswing.sh
+    volumes:
+      - zap_data:/zap/wrk
+    networks:
+      - devsecops-network
+
+  # Dependency-Track pour l'analyse des dépendances (SBOM)
+  dependency-track:
+    image: dependencytrack/apiserver:latest
+    ports:
+      - "8081:8080"
+    environment:
+      - ALPINE_DATABASE_MODE=external
+      - ALPINE_DATABASE_URL=jdbc:postgresql://dt-db:5432/dtrack
+      - ALPINE_DATABASE_DRIVER=org.postgresql.Driver
+      - ALPINE_DATABASE_USERNAME=dtrack
+      - ALPINE_DATABASE_PASSWORD=dtrack
+    volumes:
+      - dependency_track_data:/data
+    networks:
+      - devsecops-network
+    depends_on:
+      - dt-db
+
+  # Frontend Dependency-Track
+  dependency-track-frontend:
+    image: dependencytrack/frontend:latest
+    ports:
+      - "8082:8080"
+    environment:
+      - API_BASE_URL=http://localhost:8081
+    networks:
+      - devsecops-network
+    depends_on:
+      - dependency-track
+
+  # Base de données pour Dependency-Track
+  dt-db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=dtrack
+      - POSTGRES_PASSWORD=dtrack
+      - POSTGRES_DB=dtrack
+    volumes:
+      - dt_postgresql_data:/var/lib/postgresql/data
+    networks:
+      - devsecops-network
+
+  # DefectDojo - Configuration avancee (optionnel)
+  # Pour utiliser DefectDojo, suivre la doc officielle :
+  # https://github.com/DefectDojo/django-DefectDojo
+  # defectdojo:
+  #   image: defectdojo/defectdojo-django:latest
+  #   ports:
+  #     - "8083:8080"
+  #   environment:
+  #     - DD_DATABASE_URL=postgresql://defectdojo:defectdojo@dojo-db:5432/defectdojo
+  #     - DD_SECRET_KEY=workshop-secret-key-change-in-production
+  #     - DD_CREDENTIAL_AES_256_KEY=workshop-aes-key-32-characters!!
+  #   networks:
+  #     - devsecops-network
+  #   depends_on:
+  #     - dojo-db
+
+  # Base de données DefectDojo (optionnel)
+  # dojo-db:
+  #   image: postgres:15
+  #   environment:
+  #     - POSTGRES_USER=defectdojo
+  #     - POSTGRES_PASSWORD=defectdojo
+  #     - POSTGRES_DB=defectdojo
+  #   volumes:
+  #     - dojo_postgresql_data:/var/lib/postgresql/data
+  #   networks:
+  #     - devsecops-network
+
+networks:
+  devsecops-network:
+    driver: bridge
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  postgresql_data:
+  zap_data:
+  dependency_track_data:
+  dt_postgresql_data:
+  dojo_postgresql_data:

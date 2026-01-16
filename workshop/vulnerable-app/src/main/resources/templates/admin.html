@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VulnerableBank - Administration</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        .navbar {
+            background: #c0392b;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar h1 span { color: #f1c40f; }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            color: #c0392b;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+        }
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-warning { background: #f39c12; color: white; }
+        .btn-primary { background: #3498db; color: white; }
+        .vulnerability-warning {
+            background: #c0392b;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .debug-section {
+            background: #1a1a2e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>Vulnerable<span>Bank</span> - ADMIN</h1>
+        <div>
+            <a href="/dashboard">Dashboard User</a>
+            <a href="/logout">Déconnexion</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="vulnerability-warning">
+            <strong>⚠️ ATTENTION :</strong> Cette page d'administration est accessible en modifiant 
+            simplement le cookie "role=ADMIN". Aucune vérification côté serveur !
+        </div>
+
+        <div class="card">
+            <h2>Gestion des utilisateurs</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Rôle</th>
+                        <th>Solde</th>
+                        <th>SSN</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="user : ${users}">
+                        <td th:text="${user.id}">-</td>
+                        <td th:text="${user.username}">-</td>
+                        <td th:text="${user.email}">-</td>
+                        <td th:text="${user.role}">-</td>
+                        <td th:text="${#numbers.formatDecimal(user.balance, 1, 2)} + ' €'">-</td>
+                        <td th:text="${user.ssn}">-</td>
+                        <td>
+                            <button class="btn btn-warning" 
+                                    th:onclick="'promoteUser(' + ${user.id} + ')'">
+                                Promouvoir
+                            </button>
+                            <button class="btn btn-danger"
+                                    th:onclick="'deleteUser(' + ${user.id} + ')'">
+                                Supprimer
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Outils dangereux</h2>
+            
+            <h3 style="margin: 15px 0;">Lecture de fichier (Path Traversal)</h3>
+            <form onsubmit="readFile(event)">
+                <input type="text" id="filename" placeholder="Fichier (ex: ../../../etc/passwd)" 
+                       style="width: 300px; padding: 8px;">
+                <button type="submit" class="btn btn-primary">Lire</button>
+            </form>
+            <div id="file-content" class="debug-section" style="margin-top: 10px; display: none;"></div>
+
+            <h3 style="margin: 15px 0;">Exécution de commande (RCE)</h3>
+            <form onsubmit="execCommand(event)">
+                <input type="text" id="command" placeholder="Commande (ex: id, whoami, ls -la)" 
+                       style="width: 300px; padding: 8px;">
+                <button type="submit" class="btn btn-danger">Exécuter</button>
+            </form>
+            <div id="cmd-output" class="debug-section" style="margin-top: 10px; display: none;"></div>
+
+            <h3 style="margin: 15px 0;">Debug Info</h3>
+            <button class="btn btn-warning" onclick="loadDebug()">Afficher les infos système</button>
+            <div id="debug-info" class="debug-section" style="margin-top: 10px; display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        function promoteUser(id) {
+            fetch('/admin/promote/' + id, { method: 'POST' })
+                .then(r => r.text())
+                .then(alert)
+                .then(() => location.reload());
+        }
+
+        function deleteUser(id) {
+            if (confirm('Supprimer cet utilisateur ?')) {
+                fetch('/admin/delete-user/' + id, { method: 'POST' })
+                    .then(r => r.text())
+                    .then(alert)
+                    .then(() => location.reload());
+            }
+        }
+
+        function readFile(e) {
+            e.preventDefault();
+            const filename = document.getElementById('filename').value;
+            fetch('/admin/file?filename=' + encodeURIComponent(filename))
+                .then(r => r.text())
+                .then(content => {
+                    const div = document.getElementById('file-content');
+                    div.style.display = 'block';
+                    div.textContent = content || 'Fichier vide ou non trouvé';
+                });
+        }
+
+        function execCommand(e) {
+            e.preventDefault();
+            const cmd = document.getElementById('command').value;
+            fetch('/admin/exec?cmd=' + encodeURIComponent(cmd), { method: 'POST' })
+                .then(r => r.text())
+                .then(output => {
+                    const div = document.getElementById('cmd-output');
+                    div.style.display = 'block';
+                    div.textContent = output;
+                });
+        }
+
+        function loadDebug() {
+            fetch('/admin/debug')
+                .then(r => r.text())
+                .then(info => {
+                    const div = document.getElementById('debug-info');
+                    div.style.display = 'block';
+                    div.textContent = info;
+                });
+        }
+    </script>
+</body>
+</html>

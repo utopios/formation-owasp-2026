@@ -1,0 +1,382 @@
+# ===========================================
+# Pipeline CI/CD DevSecOps Complet
+# GitLab CI/CD Configuration
+# ===========================================
+
+stages:
+  - build
+  - test
+  - security-sca      # Software Composition Analysis (Dépendances)
+  - security-sast     # Static Application Security Testing
+  - deploy-staging
+  - security-dast     # Dynamic Application Security Testing
+  - security-report
+  - deploy-prod
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+  SONAR_HOST_URL: "http://sonarqube:9000"
+  ZAP_TARGET_URL: "http://vulnerable-app:8080"
+  DEPENDENCY_TRACK_URL: "http://dependency-track:8080"
+
+# ===========================================
+# Cache Maven
+# ===========================================
+cache:
+  paths:
+    - .m2/repository/
+    - target/
+
+# ===========================================
+# STAGE 1: BUILD
+# ===========================================
+build:
+  stage: build
+  image: maven:3.8.4-openjdk-11
+  script:
+    - echo "=== Compilation de l'application ==="
+    - mvn clean compile -DskipTests
+    - mvn package -DskipTests
+  artifacts:
+    paths:
+      - target/*.jar
+      - target/classes/
+    expire_in: 1 hour
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 2: TESTS UNITAIRES
+# ===========================================
+unit-tests:
+  stage: test
+  image: maven:3.8.4-openjdk-11
+  script:
+    - echo "=== Exécution des tests unitaires ==="
+    - mvn test
+    - mvn jacoco:report
+  artifacts:
+    paths:
+      - target/surefire-reports/
+      - target/site/jacoco/
+    reports:
+      junit: target/surefire-reports/*.xml
+    expire_in: 1 week
+  coverage: '/Total.*?([0-9]{1,3})%/'
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 3: ANALYSE DES DÉPENDANCES (SCA)
+# ===========================================
+
+# OWASP Dependency-Check
+dependency-check:
+  stage: security-sca
+  image: owasp/dependency-check:latest
+  script:
+    - echo "=== Analyse des dépendances avec OWASP Dependency-Check ==="
+    - /usr/share/dependency-check/bin/dependency-check.sh 
+        --project "VulnerableBank"
+        --scan ./
+        --format HTML
+        --format JSON
+        --format XML
+        --out dependency-check-report
+        --failOnCVSS 7
+        --enableExperimental
+  artifacts:
+    paths:
+      - dependency-check-report/
+    expire_in: 1 week
+  allow_failure: true  # Ne pas bloquer pour la démo
+  tags:
+    - docker
+
+# Génération du SBOM (Software Bill of Materials)
+sbom-generation:
+  stage: security-sca
+  image: maven:3.8.4-openjdk-11
+  script:
+    - echo "=== Génération du SBOM avec CycloneDX ==="
+    - mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom
+    - mv target/bom.xml sbom-cyclonedx.xml
+    - mv target/bom.json sbom-cyclonedx.json
+  artifacts:
+    paths:
+      - sbom-cyclonedx.xml
+      - sbom-cyclonedx.json
+    expire_in: 1 week
+  tags:
+    - docker
+
+# Analyse avec Trivy (vulnérabilités + misconfigurations)
+trivy-scan:
+  stage: security-sca
+  image: aquasec/trivy:latest
+  script:
+    - echo "=== Scan Trivy pour vulnérabilités ==="
+    - trivy fs --security-checks vuln,config --format json --output trivy-report.json .
+    - trivy fs --security-checks vuln,config --format table .
+  artifacts:
+    paths:
+      - trivy-report.json
+    expire_in: 1 week
+  allow_failure: true
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 4: ANALYSE STATIQUE (SAST)
+# ===========================================
+
+# SonarQube Analysis
+sonarqube-sast:
+  stage: security-sast
+  image: sonarsource/sonar-scanner-cli:latest
+  script:
+    - echo "=== Analyse SonarQube SAST ==="
+    - sonar-scanner
+        -Dsonar.projectKey=vulnerable-bank
+        -Dsonar.sources=src/main/java
+        -Dsonar.java.binaries=target/classes
+        -Dsonar.host.url=${SONAR_HOST_URL}
+        -Dsonar.login=${SONAR_TOKEN}
+        -Dsonar.qualitygate.wait=true
+  artifacts:
+    paths:
+      - .scannerwork/report-task.txt
+    expire_in: 1 week
+  allow_failure: true
+  tags:
+    - docker
+
+# SpotBugs avec plugin Find Security Bugs
+spotbugs-security:
+  stage: security-sast
+  image: maven:3.8.4-openjdk-11
+  script:
+    - echo "=== Analyse SpotBugs + Find Security Bugs ==="
+    - mvn spotbugs:spotbugs -Dspotbugs.plugins.plugin.groupId=com.h3xstream.findsecbugs -Dspotbugs.plugins.plugin.artifactId=findsecbugs-plugin -Dspotbugs.plugins.plugin.version=1.12.0
+    - mv target/spotbugsXml.xml spotbugs-report.xml || true
+  artifacts:
+    paths:
+      - spotbugs-report.xml
+      - target/spotbugs.html
+    expire_in: 1 week
+  allow_failure: true
+  tags:
+    - docker
+
+# Semgrep (analyse multi-langage)
+semgrep-sast:
+  stage: security-sast
+  image: returntocorp/semgrep:latest
+  script:
+    - echo "=== Analyse Semgrep SAST ==="
+    - semgrep scan --config=auto --config=p/java --config=p/owasp-top-ten 
+        --json --output=semgrep-report.json 
+        --sarif --sarif-output=semgrep-report.sarif
+        src/
+  artifacts:
+    paths:
+      - semgrep-report.json
+      - semgrep-report.sarif
+    expire_in: 1 week
+  allow_failure: true
+  tags:
+    - docker
+
+# Horusec (SAST multi-outils)
+horusec-sast:
+  stage: security-sast
+  image: horuszup/horusec-cli:latest
+  script:
+    - echo "=== Analyse Horusec SAST ==="
+    - horusec start -p . -o json -O horusec-report.json
+  artifacts:
+    paths:
+      - horusec-report.json
+    expire_in: 1 week
+  allow_failure: true
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 5: DÉPLOIEMENT STAGING
+# ===========================================
+deploy-staging:
+  stage: deploy-staging
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - echo "=== Déploiement en staging ==="
+    - docker build -t vulnerable-bank:staging .
+    - docker-compose -f docker-compose.staging.yml up -d
+    - echo "Attente du démarrage de l'application..."
+    - sleep 30
+    - curl -f http://localhost:8080/api/health || exit 1
+  environment:
+    name: staging
+    url: http://staging.vulnerablebank.local:8080
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 6: ANALYSE DYNAMIQUE (DAST)
+# ===========================================
+
+# OWASP ZAP Baseline Scan (rapide)
+zap-baseline:
+  stage: security-dast
+  image: owasp/zap2docker-stable
+  script:
+    - echo "=== Scan ZAP Baseline (rapide) ==="
+    - mkdir -p zap-reports
+    - zap-baseline.py 
+        -t ${ZAP_TARGET_URL}
+        -r zap-reports/zap-baseline-report.html
+        -x zap-reports/zap-baseline-report.xml
+        -J zap-reports/zap-baseline-report.json
+        -I
+  artifacts:
+    paths:
+      - zap-reports/
+    expire_in: 1 week
+  allow_failure: true
+  dependencies:
+    - deploy-staging
+  tags:
+    - docker
+
+# OWASP ZAP Full Scan (complet)
+zap-full-scan:
+  stage: security-dast
+  image: owasp/zap2docker-stable
+  script:
+    - echo "=== Scan ZAP Full (complet) ==="
+    - mkdir -p zap-reports
+    - zap-full-scan.py 
+        -t ${ZAP_TARGET_URL}
+        -r zap-reports/zap-full-report.html
+        -x zap-reports/zap-full-report.xml
+        -J zap-reports/zap-full-report.json
+        -I
+        -d
+  artifacts:
+    paths:
+      - zap-reports/
+    expire_in: 1 week
+  allow_failure: true
+  when: manual  # Exécution manuelle car plus long
+  dependencies:
+    - deploy-staging
+  tags:
+    - docker
+
+# ZAP API Scan
+zap-api-scan:
+  stage: security-dast
+  image: owasp/zap2docker-stable
+  script:
+    - echo "=== Scan ZAP API ==="
+    - mkdir -p zap-reports
+    # Génération OpenAPI spec si disponible
+    - zap-api-scan.py 
+        -t ${ZAP_TARGET_URL}/api
+        -f openapi
+        -r zap-reports/zap-api-report.html
+        -x zap-reports/zap-api-report.xml
+        -J zap-reports/zap-api-report.json
+        -I
+  artifacts:
+    paths:
+      - zap-reports/
+    expire_in: 1 week
+  allow_failure: true
+  dependencies:
+    - deploy-staging
+  tags:
+    - docker
+
+# Nuclei Scanner
+nuclei-scan:
+  stage: security-dast
+  image: projectdiscovery/nuclei:latest
+  script:
+    - echo "=== Scan Nuclei ==="
+    - nuclei -u ${ZAP_TARGET_URL} -t cves/ -t vulnerabilities/ -t exposures/
+        -o nuclei-report.txt -json -o nuclei-report.json
+  artifacts:
+    paths:
+      - nuclei-report.txt
+      - nuclei-report.json
+    expire_in: 1 week
+  allow_failure: true
+  dependencies:
+    - deploy-staging
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 7: RAPPORT DE SÉCURITÉ
+# ===========================================
+security-report:
+  stage: security-report
+  image: python:3.9
+  script:
+    - echo "=== Génération du rapport de sécurité consolidé ==="
+    - pip install jinja2 json2html
+    - python scripts/generate-security-report.py
+  artifacts:
+    paths:
+      - security-report/
+    expire_in: 1 month
+  dependencies:
+    - dependency-check
+    - sbom-generation
+    - trivy-scan
+    - sonarqube-sast
+    - spotbugs-security
+    - semgrep-sast
+    - zap-baseline
+  tags:
+    - docker
+
+# Upload vers DefectDojo
+upload-defectdojo:
+  stage: security-report
+  image: python:3.9
+  script:
+    - echo "=== Upload des résultats vers DefectDojo ==="
+    - pip install requests
+    - python scripts/upload-to-defectdojo.py
+  dependencies:
+    - dependency-check
+    - zap-baseline
+    - semgrep-sast
+  when: manual
+  tags:
+    - docker
+
+# ===========================================
+# STAGE 8: DÉPLOIEMENT PRODUCTION
+# ===========================================
+deploy-prod:
+  stage: deploy-prod
+  image: docker:latest
+  script:
+    - echo "=== Déploiement en production ==="
+    - echo "ATTENTION: Cette application est vulnérable !"
+    - echo "Ne jamais déployer en production réelle !"
+    # docker build -t vulnerable-bank:prod .
+    # docker-compose -f docker-compose.prod.yml up -d
+  environment:
+    name: production
+    url: http://vulnerablebank.local:8080
+  when: manual  # Approbation manuelle requise
+  only:
+    - main
+  tags:
+    - docker

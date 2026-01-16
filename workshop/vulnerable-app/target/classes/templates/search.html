@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VulnerableBank - Recherche</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        .navbar {
+            background: #1a1a2e;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar h1 span { color: #e94560; }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .search-box {
+            display: flex;
+            gap: 10px;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .search-box button {
+            padding: 12px 25px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f8f9fa;
+        }
+        .vulnerability-note {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .exploit-example {
+            background: #1a1a2e;
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin-top: 10px;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>Vulnerable<span>Bank</span></h1>
+        <div>
+            <a href="/dashboard">Tableau de bord</a>
+            <a href="/logout">Déconnexion</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <h2>Recherche d'utilisateurs</h2>
+            
+            <form method="GET" action="/dashboard/search" class="search-box">
+                <input type="text" name="query" placeholder="Rechercher par nom ou email..."
+                       th:value="${query}">
+                <button type="submit">Rechercher</button>
+            </form>
+
+            <!-- VULNÉRABILITÉ XSS : Affichage sans échappement -->
+            <p th:if="${query}" style="margin-top: 15px;">
+                Résultats pour : <strong th:utext="${query}"></strong>
+            </p>
+
+            <table th:if="${results != null && !results.isEmpty()}">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nom d'utilisateur</th>
+                        <th>Email</th>
+                        <th>Rôle</th>
+                        <th>Solde</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="user : ${results}">
+                        <td th:text="${user.id}">-</td>
+                        <td th:text="${user.username}">-</td>
+                        <td th:text="${user.email}">-</td>
+                        <td th:text="${user.role}">-</td>
+                        <td th:text="${#numbers.formatDecimal(user.balance, 1, 2)} + ' €'">-</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p th:if="${results != null && results.isEmpty()}" style="margin-top: 15px; color: #666;">
+                Aucun résultat trouvé.
+            </p>
+        </div>
+
+        <div class="card vulnerability-note">
+            <h3>⚠️ Vulnérabilités présentes</h3>
+            
+            <h4 style="margin-top: 15px;">1. Injection SQL</h4>
+            <p>La recherche est vulnérable à l'injection SQL.</p>
+            <div class="exploit-example">
+                Payload: ' OR '1'='1<br>
+                Payload: ' UNION SELECT id, username, password, email, role, ssn, credit_card, balance, active FROM users--
+            </div>
+
+            <h4 style="margin-top: 15px;">2. Cross-Site Scripting (XSS)</h4>
+            <p>Le terme de recherche est affiché sans échappement.</p>
+            <div class="exploit-example">
+                Payload: &lt;script&gt;alert('XSS')&lt;/script&gt;<br>
+                Payload: &lt;img src=x onerror="alert(document.cookie)"&gt;
+            </div>
+        </div>
+    </div>
+</body>
+</html>
